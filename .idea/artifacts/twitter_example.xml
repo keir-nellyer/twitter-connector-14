@@ -1,0 +1,12 @@
+<component name="ArtifactManager">
+  <artifact type="jar" build-on-make="true" name="twitter-example">
+    <output-path>$PROJECT_DIR$/out/artifacts/twitter_example</output-path>
+    <root id="archive" name="twitter-example.jar">
+      <element id="module-output" name="twitter-connector-14" />
+      <element id="library" level="project" name="lib" />
+      <element id="directory" name="META-INF">
+        <element id="file-copy" path="$PROJECT_DIR$/META-INF/MANIFEST.MF" />
+      </element>
+    </root>
+  </artifact>
+</component>
