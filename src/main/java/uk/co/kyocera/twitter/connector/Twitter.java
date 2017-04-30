@@ -11,11 +11,13 @@ import uk.co.kyocera.twitter.connector.util.Util;
 import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
 import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.URL;
 import java.util.*;
 
 public class Twitter {
     private static final String REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
+    private static final String AUTHORIZE_URL = "https://api.twitter.com/oauth/authorize";
 
     private final String userAgent;
     private final OAuthConfig oauthConfig;
@@ -35,7 +37,7 @@ public class Twitter {
         HttpsURLConnection connection = null;
 
         try {
-            URL url = new URL(REQUEST_TOKEN_URL);
+            URL url = getURI(REQUEST_TOKEN_URL, null).toURL();
             connection = (HttpsURLConnection) url.openConnection();
             connection.setDoOutput(true);
             connection.setDoInput(true);
@@ -76,6 +78,47 @@ public class Twitter {
         }
 
         return false;
+    }
+
+    public URL getAuthenticateURL() {
+        Map parameters = new HashMap();
+        parameters.put("screen_name", "scan_to_social");
+        parameters.put("oauth_token", requestToken.getToken());
+
+        try {
+            return getURI(AUTHORIZE_URL, parameters).toURL();
+        } catch (MalformedURLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private URI getURI(String baseURL, Map getParameters) {
+        String paramString = "";
+
+        if (getParameters != null && !getParameters.isEmpty()) {
+            StringBuffer buffer = new StringBuffer();
+            buffer.append("?");
+
+            Iterator iterator = getParameters.entrySet().iterator();
+            while (iterator.hasNext()) {
+                Map.Entry entry = (Map.Entry) iterator.next();
+                String key = (String) entry.getKey();
+                String value = (String) entry.getValue();
+
+                // URL encode?
+                buffer.append(key);
+                buffer.append("=");
+                buffer.append(value);
+
+                if (iterator.hasNext()) {
+                    buffer.append("&");
+                }
+            }
+
+            paramString = buffer.toString();
+        }
+
+        return URI.create(baseURL + paramString);
     }
 
     private Map getDefaultOAuthHeader() {

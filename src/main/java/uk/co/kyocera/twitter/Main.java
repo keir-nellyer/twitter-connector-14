@@ -5,6 +5,7 @@ import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 
 import java.io.IOException;
+import java.net.URL;
 
 public class Main {
     private static final String CONSUMER_KEY = "R3zGaVVKuW6uQZy6YxaT9bzRM";
@@ -18,5 +19,8 @@ public class Main {
         } catch (TwitterException e) {
             e.printStackTrace();
         }
+
+        URL authenticateURL = twitter.getAuthenticateURL();
+        System.out.println("Authenticate URL: " + authenticateURL.toString());
     }
 }
