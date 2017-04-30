@@ -1,133 +1,233 @@
 package uk.co.kyocera.twitter.connector;
 
 import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.codec.binary.StringUtils;
 import org.apache.commons.httpclient.HttpClient;
-import org.apache.commons.httpclient.NameValuePair;
-import org.apache.commons.httpclient.methods.PostMethod;
-import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
-import uk.co.kyocera.twitter.connector.oauth.RequestToken;
 
 import javax.crypto.Mac;
-import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
 
 public class Twitter {
+    private static final String REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
+
     private static final String HMAC_SHA1 = "HmacSHA1";
 
     private final HttpClient httpClient = new HttpClient();
 
+    private final String userAgent;
     private final OAuthConfig oauthConfig;
 
+    private String oauthTokenSecret = null;
     private String bearerToken = null;
 
-    public Twitter(OAuthConfig oauthConfig) {
+    public Twitter(String userAgent, OAuthConfig oauthConfig) {
+        this.userAgent = userAgent;
         this.oauthConfig = oauthConfig;
     }
 
-    // Encodes the consumer key and secret to create the basic authorization key
-    private static String encodeKeys(String consumerKey, String consumerSecret) {
-        try {
-            String encodedConsumerKey = URLEncoder.encode(consumerKey, "UTF-8");
-            String encodedConsumerSecret = URLEncoder.encode(consumerSecret, "UTF-8");
+    public void fetchRequestToken() {
+        long timeMillis = System.currentTimeMillis();
+        long timeSecs = timeMillis / 1000;
 
-            String fullKey = encodedConsumerKey + ":" + encodedConsumerSecret;
-            byte[] encodedBytes = Base64.encodeBase64(fullKey.getBytes());
-            return new String(encodedBytes);
-        }
-        catch (UnsupportedEncodingException e) {
-            return new String();
-        }
-    }
+        Map authHeader = new HashMap();
+        authHeader.put("oauth_nonce", String.valueOf(timeMillis)); // use time millis for ease
+        authHeader.put("oauth_callback", "http://127.0.0.1:8080/process_callback");
+        authHeader.put("oauth_signature_method", "HMAC-SHA1");
+        authHeader.put("oauth_timestamp", String.valueOf(timeSecs));
+        authHeader.put("oauth_consumer_key", oauthConfig.getKey());
+        authHeader.put("oauth_version", "1.0");
 
-    // Constructs the request for requesting a bearer token and returns that token as a string
-    public void requestBearerToken(String endPointUrl) throws IOException {
+        authHeader = sortByValue(authHeader);
+        authHeader = sortByKey(authHeader);
+
+        String parameterString = getParameterString(authHeader);
+        System.out.println("Parm str: " + parameterString);
+        String baseSignature = getBaseAuthSignature("POST", REQUEST_TOKEN_URL, parameterString);
+        System.out.println("Base Signature: " + baseSignature);
+        String signingKey = getSigningKey();
+        System.out.println("Signing Key: " + signingKey);
+        String hashed = hash(signingKey, baseSignature);
+        System.out.println("Hash: " + hashed);
+        authHeader.put("oauth_signature", hashed);
+
         HttpsURLConnection connection = null;
-        String encodedCredentials = encodeKeys(oauthConfig.getKey(),oauthConfig.getSecret());
 
         try {
-            URL url = new URL(endPointUrl);
+            URL url = new URL(REQUEST_TOKEN_URL);
             connection = (HttpsURLConnection) url.openConnection();
             connection.setDoOutput(true);
             connection.setDoInput(true);
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Host", "api.twitter.com");
-            connection.setRequestProperty("User-Agent", "Your Program Name");
-            connection.setRequestProperty("Authorization", "Basic " + encodedCredentials);
+            connection.setRequestProperty("User-Agent", userAgent);
+            String header = getHeader(authHeader);
+            System.out.println("Header: " + header);
+            connection.setRequestProperty("Authorization", "OAuth " + header);
             connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
-            connection.setRequestProperty("Content-Length", "29");
             connection.setUseCaches(false);
 
-            writeRequest(connection, "grant_type=client_credentials");
+            writeRequest(connection, "");
 
             // Parse the JSON response into a JSON mapped object to fetch fields from.
-            JSONObject obj = (JSONObject)JSONValue.parse(readResponse(connection));
+            String response = readResponse(connection);
+            System.out.println("Response: " + response);
+            JSONObject obj = (JSONObject)JSONValue.parse(response);
 
             if (obj != null) {
-                String tokenType = (String)obj.get("token_type");
-                String token = (String)obj.get("access_token");
+                String token = (String)obj.get("oauth_token");
+                String secret = (String) obj.get("oauth_token_secret");
 
-                bearerToken = ((tokenType.equals("bearer")) && (token != null)) ? token : "";
+                System.out.println(token);
+                System.out.println(secret);
             } else {
-                bearerToken = "";
+
             }
-        }
-        catch (MalformedURLException e) {
-            throw new IOException("Invalid endpoint URL specified."/*, e*/);
-        }
-        finally {
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
             if (connection != null) {
                 connection.disconnect();
             }
         }
     }
 
-    // Fetches the first tweet from a given user's timeline
-    public String fetchTimelineTweet(String endPointUrl) throws IOException {
-        HttpsURLConnection connection = null;
+    private static Map sortByKey(Map map) {
+        return new TreeMap(map);
+    }
 
+    private static Map sortByValue(Map map) {
+        List list = new LinkedList(map.entrySet());
+
+        Collections.sort(list, new Comparator() {
+            public int compare(Object o1, Object o2) {
+                Comparable comparable1 = (Comparable) ((Map.Entry) o1).getValue();
+                Comparable comparable2 = (Comparable) ((Map.Entry) o2).getValue();
+
+                return comparable1.compareTo(comparable2);
+            }
+        });
+
+        Map sortedMap = new LinkedHashMap();
+        for (Iterator iterator = list.iterator(); iterator.hasNext();) {
+            Map.Entry entry = (Map.Entry) iterator.next();
+            sortedMap.put(entry.getKey(), entry.getValue());
+        }
+
+        return sortedMap;
+    }
+
+    private String getHeader(Map parameters) {
+        StringBuffer buffer = new StringBuffer();
+        Iterator iterator = parameters.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            Map.Entry entry = (Map.Entry) iterator.next();
+            String key = (String) entry.getKey();
+            String value = (String) entry.getValue();
+
+            buffer.append(percentEncode(key));
+            buffer.append("=\"");
+            buffer.append(percentEncode(value));
+            buffer.append("\"");
+
+            if (iterator.hasNext()) {
+                buffer.append(", ");
+            }
+        }
+
+        return buffer.toString();
+    }
+
+    private String getParameterString(Map parameters) {
+        StringBuffer buffer = new StringBuffer();
+        Iterator iterator = parameters.entrySet().iterator();
+
+        while (iterator.hasNext()) {
+            Map.Entry entry = (Map.Entry) iterator.next();
+            String key = (String) entry.getKey();
+            String value = (String) entry.getValue();
+
+            buffer.append(percentEncode(key));
+            buffer.append("=");
+            buffer.append(percentEncode(value));
+
+            if (iterator.hasNext()) {
+                buffer.append("&");
+            }
+        }
+
+        return buffer.toString();
+    }
+
+    private String getBaseAuthSignature(String method, String baseURL, String paramString) {
+        StringBuffer buffer = new StringBuffer();
+        buffer.append(method.toUpperCase());
+        buffer.append("&");
+        buffer.append(percentEncode(baseURL));
+        buffer.append("&");
+        buffer.append(percentEncode(paramString));
+        return buffer.toString();
+    }
+
+    private String getSigningKey() {
+        StringBuffer buffer = new StringBuffer();
+        buffer.append(percentEncode(oauthConfig.getSecret()));
+        buffer.append("&");
+
+        if (oauthTokenSecret != null) {
+            buffer.append(percentEncode(oauthTokenSecret));
+        }
+
+        return buffer.toString();
+    }
+
+    private String hash(String key, String data) {
         try {
-            URL url = new URL(endPointUrl);
-            connection = (HttpsURLConnection) url.openConnection();
-            connection.setDoOutput(true);
-            connection.setDoInput(true);
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Host", "api.twitter.com");
-            connection.setRequestProperty("User-Agent", "Your Program Name");
-            connection.setRequestProperty("Authorization", "Bearer " + bearerToken);
-            connection.setUseCaches(false);
+            // Get an hmac_sha1 key from the raw key bytes
+            byte[] keyBytes = key.getBytes();
+            SecretKeySpec signingKey = new SecretKeySpec(keyBytes, HMAC_SHA1);
 
+            // Get an hmac_sha1 Mac instance and initialize with the signing key
+            Mac mac = Mac.getInstance(HMAC_SHA1);
+            mac.init(signingKey);
 
-            // Parse the JSON response into a JSON mapped object to fetch fields from.
-            JSONArray obj = (JSONArray)JSONValue.parse(readResponse(connection));
+            // Compute the hmac on input data bytes
+            byte[] rawHmac = mac.doFinal(data.getBytes());
 
-            if (obj != null) {
-                String tweet = ((JSONObject)obj.get(0)).get("text").toString();
+            // Convert raw bytes to base64
+            byte[] base64 = Base64.encodeBase64(rawHmac);
+            //byte[] hexBytes = new Hex().encode(rawHmac);
 
-                return (tweet != null) ? tweet : "";
-            }
-            return new String();
+            //  Covert array of Hex bytes to a String
+            return new String(base64, "UTF-8").trim();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
-        catch (MalformedURLException e) {
-            throw new IOException("Invalid endpoint URL specified."/*, e*/);
+    }
+
+    public static String percentEncode(String s) {
+        if (s == null) {
+            return "";
         }
-        finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
+        try {
+            return URLEncoder.encode(s, "UTF-8")
+                    // OAuth encodes some characters differently:
+                    .replaceAll("\\+", "%20")
+                    .replaceAll("\\*", "%2A")
+                    .replaceAll("%7E", "~");
+            // This could be done faster with more hand-crafted code.
+        } catch (UnsupportedEncodingException wow) {
+            throw new RuntimeException(wow.getMessage(), wow);
         }
     }
 
@@ -141,22 +241,34 @@ public class Twitter {
 
             return true;
         }
-        catch (IOException e) { return false; }
+        catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
-
 
     // Reads a response for a given connection and returns it as a string.
     private static String readResponse(HttpsURLConnection connection) {
         try {
             StringBuffer str = new StringBuffer();
+            InputStream inputStream;
 
-            BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            if (connection.getResponseCode() >= 400) {
+                inputStream = connection.getErrorStream();
+            } else {
+                inputStream = connection.getInputStream();
+            }
+
+            BufferedReader br = new BufferedReader(new InputStreamReader(inputStream));
             String line = "";
             while((line = br.readLine()) != null) {
                 str.append(line + System.getProperty("line.separator"));
             }
             return str.toString();
         }
-        catch (IOException e) { return new String(); }
+        catch (IOException e) {
+            e.printStackTrace();
+            return new String();
+        }
     }
 }
