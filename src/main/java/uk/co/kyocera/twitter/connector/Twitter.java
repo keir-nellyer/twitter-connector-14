@@ -165,8 +165,17 @@ public class Twitter {
         List parameters = new ArrayList();
         parameters.add(new NameValuePair("status", message));
 
-        for (int i = 0; i < mediaIds.length; i++) {
-            parameters.add(new NameValuePair("media_ids", String.valueOf(mediaIds[i])));
+        if (mediaIds.length > 0) {
+            StringBuffer mediaIdsBuffer = new StringBuffer();
+            for (int i = 0; i < mediaIds.length; i++) {
+                mediaIdsBuffer.append(mediaIds[0]);
+
+                if (i != mediaIds.length - 1) {
+                    mediaIdsBuffer.append(",");
+                }
+            }
+
+            parameters.add(new NameValuePair("media_ids", mediaIdsBuffer.toString()));
         }
 
         Map authHeader = getOAuthHeader();
