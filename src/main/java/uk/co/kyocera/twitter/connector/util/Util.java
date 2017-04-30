@@ -2,7 +2,7 @@ package uk.co.kyocera.twitter.connector.util;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.net.URLEncoder;
 import java.util.*;
 

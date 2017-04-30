@@ -1,9 +1,15 @@
 package uk.co.kyocera.twitter.connector;
 
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.methods.PostMethod;
+import org.apache.commons.httpclient.methods.multipart.FilePart;
+import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
+import org.apache.commons.httpclient.methods.multipart.Part;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
+import uk.co.kyocera.twitter.connector.oauth.AccessToken;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 import uk.co.kyocera.twitter.connector.oauth.RequestToken;
 import uk.co.kyocera.twitter.connector.util.Util;
@@ -18,11 +24,15 @@ import java.util.*;
 public class Twitter {
     private static final String REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
     private static final String AUTHORIZE_URL = "https://api.twitter.com/oauth/authorize";
+    private static final String ACCESS_TOKEN_URL = "https://api.twitter.com/oauth/access_token";
+    private static final String MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
 
     private final String userAgent;
     private final OAuthConfig oauthConfig;
 
+    private final HttpClient httpClient = new HttpClient();
     private RequestToken requestToken = null;
+    private AccessToken accessToken = null;
 
     public Twitter(String userAgent, OAuthConfig oauthConfig) {
         this.userAgent = userAgent;
@@ -30,12 +40,11 @@ public class Twitter {
     }
 
     public boolean fetchRequestToken() throws TwitterException {
-        Map authHeader = getDefaultOAuthHeader();
-        authHeader.put("oauth_callback", "http://127.0.0.1:8080/process_callback");
+        Map authHeader = getOAuthHeader();
+        authHeader.put("oauth_callback", oauthConfig.getCallbackURL());
         authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
 
         HttpsURLConnection connection = null;
-
         try {
             URL url = getURI(REQUEST_TOKEN_URL, null).toURL();
             connection = (HttpsURLConnection) url.openConnection();
@@ -64,7 +73,7 @@ public class Twitter {
                 Map response = parseEncodedResponse(responseBody);
                 String token = (String) response.get("oauth_token");
                 String secret = (String) response.get("oauth_token_secret");
-                requestToken = new RequestToken(token, secret);
+                this.requestToken = new RequestToken(token, secret);
                 return true;
             }
         } catch (MalformedURLException e) {
@@ -78,6 +87,101 @@ public class Twitter {
         }
 
         return false;
+    }
+
+    public boolean fetchAccessToken(String oauthVerifier) throws TwitterException {
+        Map authHeader = getOAuthHeader();
+        authHeader.put("oauth_verifier", oauthVerifier);
+        authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
+
+        HttpsURLConnection connection = null;
+        try {
+            URL url = getURI(ACCESS_TOKEN_URL, null).toURL();
+            connection = (HttpsURLConnection) url.openConnection();
+            connection.setDoOutput(true);
+            connection.setDoInput(true);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Host", "api.twitter.com");
+            connection.setRequestProperty("User-Agent", userAgent);
+            connection.setRequestProperty("Authorization", "OAuth " + getHeader(authHeader));
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
+            connection.setUseCaches(false);
+
+            writeRequest(connection, "");
+            String responseBody = readResponse(connection);
+
+            if (connection.getResponseCode() >= 400) {
+                JSONObject jsonObject = (JSONObject) JSONValue.parse(responseBody);
+
+                if (jsonObject.containsKey("errors")) {
+                    JSONArray errors = (JSONArray) jsonObject.get("errors");
+                    throw new TwitterException(errors.toString());
+                } else {
+                    throw new TwitterException("Twitter API returned response code: " + connection.getResponseCode());
+                }
+            } else {
+                Map response = parseEncodedResponse(responseBody);
+                String token = (String) response.get("oauth_token");
+                String secret = (String) response.get("oauth_token_secret");
+                long userId = Long.parseLong((String) response.get("user_id"));
+                String screenName = (String) response.get("screen_name");
+                this.accessToken = new AccessToken(token, secret, userId, screenName);
+                return true;
+            }
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+
+        return false;
+    }
+
+    public long uploadMedia(File file) throws TwitterException {
+        System.out.println("Request Token: " + requestToken.getToken());
+        System.out.println("Access Token: " + accessToken.getToken());
+
+        Map authHeader = getOAuthHeader();
+        authHeader.put("oauth_signature", getSignature("POST", MEDIA_UPLOAD_URL, authHeader));
+
+        try {
+            PostMethod postMethod = new PostMethod(MEDIA_UPLOAD_URL);
+            postMethod.setRequestHeader("Host", "api.twitter.com");
+            postMethod.setRequestHeader("User-Agent", userAgent);
+            postMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+
+            Part[] parts = {
+                    new FilePart("media", file, "image/jpeg", null)
+            };
+
+            postMethod.setRequestEntity(new MultipartRequestEntity(parts, postMethod.getParams()));
+            int responseCode = httpClient.executeMethod(postMethod);
+
+            String responseBody = readResponse(postMethod.getResponseBodyAsStream());
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(responseBody);
+
+            if (responseCode >= 400) {
+                if (jsonObject.containsKey("errors")) {
+                    JSONArray errors = (JSONArray) jsonObject.get("errors");
+                    throw new TwitterException(errors.toString());
+                } else {
+                    throw new TwitterException("Twitter API returned response code: " + responseCode);
+                }
+            } else {
+                Long mediaId = (Long) jsonObject.get("media_id");
+                return mediaId != null ? mediaId.longValue() : -1;
+            }
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return 0;
     }
 
     public URL getAuthenticateURL() {
@@ -121,7 +225,7 @@ public class Twitter {
         return URI.create(baseURL + paramString);
     }
 
-    private Map getDefaultOAuthHeader() {
+    private Map getOAuthHeader() {
         Map authHeader = new HashMap();
         long timeMillis = System.currentTimeMillis();
         long timeSecs = timeMillis / 1000;
@@ -129,6 +233,13 @@ public class Twitter {
         authHeader.put("oauth_signature_method", "HMAC-SHA1");
         authHeader.put("oauth_timestamp", String.valueOf(timeSecs));
         authHeader.put("oauth_consumer_key", oauthConfig.getKey());
+
+        if (accessToken != null) {
+            authHeader.put("oauth_token", accessToken.getToken());
+        } else if (requestToken != null) {
+            authHeader.put("oauth_token", requestToken.getToken());
+        }
+
         authHeader.put("oauth_version", "1.0");
         return authHeader;
     }
@@ -219,7 +330,9 @@ public class Twitter {
         buffer.append(Util.percentEncode(oauthConfig.getSecret()));
         buffer.append("&");
 
-        if (requestToken != null) {
+        if (accessToken != null) {
+            buffer.append(Util.percentEncode(accessToken.getSecret()));
+        } else if (requestToken != null) {
             buffer.append(Util.percentEncode(requestToken.getSecret()));
         }
 
@@ -243,7 +356,6 @@ public class Twitter {
 
     private static String readResponse(HttpsURLConnection connection) {
         try {
-            StringBuffer str = new StringBuffer();
             InputStream inputStream;
 
             if (connection.getResponseCode() >= 400) {
@@ -252,6 +364,17 @@ public class Twitter {
                 inputStream = connection.getInputStream();
             }
 
+            return readResponse(inputStream);
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+            return "";
+        }
+    }
+
+    private static String readResponse(InputStream inputStream) {
+        try {
+            StringBuffer str = new StringBuffer();
             BufferedReader br = new BufferedReader(new InputStreamReader(inputStream));
             String line;
 
@@ -260,8 +383,7 @@ public class Twitter {
             }
 
             return str.toString();
-        }
-        catch (IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
             return "";
         }
