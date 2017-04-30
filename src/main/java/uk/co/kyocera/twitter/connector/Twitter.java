@@ -1,7 +1,6 @@
 package uk.co.kyocera.twitter.connector;
 
 import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.httpclient.HttpClient;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
@@ -20,13 +19,10 @@ public class Twitter {
 
     private static final String HMAC_SHA1 = "HmacSHA1";
 
-    private final HttpClient httpClient = new HttpClient();
-
     private final String userAgent;
     private final OAuthConfig oauthConfig;
 
     private String oauthTokenSecret = null;
-    private String bearerToken = null;
 
     public Twitter(String userAgent, OAuthConfig oauthConfig) {
         this.userAgent = userAgent;
