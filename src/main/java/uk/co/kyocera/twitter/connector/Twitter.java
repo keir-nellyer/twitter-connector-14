@@ -1,6 +1,8 @@
 package uk.co.kyocera.twitter.connector;
 
 import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.HttpException;
+import org.apache.commons.httpclient.NameValuePair;
 import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.methods.multipart.FilePart;
 import org.apache.commons.httpclient.methods.multipart.MultipartRequestEntity;
@@ -25,6 +27,7 @@ public class Twitter {
     private static final String AUTHORIZE_URL = "https://api.twitter.com/oauth/authorize";
     private static final String ACCESS_TOKEN_URL = "https://api.twitter.com/oauth/access_token";
     private static final String MEDIA_UPLOAD_URL = "https://upload.twitter.com/1.1/media/upload.json";
+    private static final String UPDATE_STATUS_URL = "https://api.twitter.com/1.1/statuses/update.json";
 
     private final String userAgent;
     private final OAuthConfig oauthConfig;
@@ -119,9 +122,6 @@ public class Twitter {
     }
 
     public long uploadMedia(File file) throws TwitterException {
-        System.out.println("Request Token: " + requestToken.getToken());
-        System.out.println("Access Token: " + accessToken.getToken());
-
         Map authHeader = getOAuthHeader();
         authHeader.put("oauth_signature", getSignature("POST", MEDIA_UPLOAD_URL, authHeader));
 
@@ -159,6 +159,57 @@ public class Twitter {
         }
 
         return 0;
+    }
+
+    public long updateStatus(String message, long[] mediaIds) throws TwitterException {
+        List parameters = new ArrayList();
+        parameters.add(new NameValuePair("status", message));
+
+        for (int i = 0; i < mediaIds.length; i++) {
+            parameters.add(new NameValuePair("media_ids", String.valueOf(mediaIds[i])));
+        }
+
+        Map authHeader = getOAuthHeader();
+        Map allParameters = new HashMap();
+        allParameters.putAll(authHeader);
+
+        Iterator iterator = parameters.iterator();
+        while (iterator.hasNext()) {
+            NameValuePair pair = (NameValuePair) iterator.next();
+            allParameters.put(pair.getName(), pair.getValue());
+        }
+
+        authHeader.put("oauth_signature", getSignature("POST", UPDATE_STATUS_URL, allParameters));
+
+        try {
+            PostMethod updateStatusMethod = new PostMethod(UPDATE_STATUS_URL);
+            updateStatusMethod.setRequestHeader("Host", "api.twitter.com");
+            updateStatusMethod.setRequestHeader("User-Agent", userAgent);
+            updateStatusMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+            updateStatusMethod.addParameters((NameValuePair[]) parameters.toArray(new NameValuePair[parameters.size()]));
+
+            int responseCode = httpClient.executeMethod(updateStatusMethod);
+            String responseBody = updateStatusMethod.getResponseBodyAsString();
+            JSONObject jsonObject = (JSONObject) JSONValue.parse(responseBody);
+
+            if (responseCode >= 400) {
+                if (jsonObject.containsKey("errors")) {
+                    JSONArray errors = (JSONArray) jsonObject.get("errors");
+                    throw new TwitterException(errors.toString());
+                } else {
+                    throw new TwitterException("Twitter API returned response code: " + responseCode);
+                }
+            } else {
+                Long statusId = (Long) jsonObject.get("id");
+                return statusId != null ? statusId.longValue() : -1;
+            }
+        } catch (HttpException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return -1;
     }
 
     public URL getAuthenticateURL(String screenName) {

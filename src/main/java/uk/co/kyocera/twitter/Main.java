@@ -24,7 +24,18 @@ public class Main {
 
             if (twitter.fetchAccessToken(reader.readLine())) {
                 long mediaId = twitter.uploadMedia(new File("src/main/resources/image.jpg"));
-                System.out.println("mediaId: " + mediaId);
+
+                if (mediaId != -1) {
+                    long statusId = twitter.updateStatus("Test Status from Twitter Connector", new long[]{mediaId});
+
+                    if (statusId != -1) {
+                        System.out.println("Status updated, id = " + statusId);
+                    } else {
+                        System.out.println("Error whilst updating status.");
+                    }
+                } else {
+                    System.out.println("Error whilst uploading media.");
+                }
             } else {
                 System.out.println("Error whilst receiving access token.");
             }
