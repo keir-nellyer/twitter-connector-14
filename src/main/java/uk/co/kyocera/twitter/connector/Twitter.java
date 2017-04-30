@@ -1,26 +1,21 @@
 package uk.co.kyocera.twitter.connector;
 
-import org.apache.commons.codec.binary.Base64;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 import uk.co.kyocera.twitter.connector.oauth.RequestToken;
+import uk.co.kyocera.twitter.connector.util.Util;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.util.*;
 
 public class Twitter {
     private static final String REQUEST_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
-
-    private static final String HMAC_SHA1 = "HmacSHA1";
 
     private final String userAgent;
     private final OAuthConfig oauthConfig;
@@ -33,7 +28,7 @@ public class Twitter {
     }
 
     public boolean fetchRequestToken() throws TwitterException {
-        Map authHeader = getDefaultAuthHeader();
+        Map authHeader = getDefaultOAuthHeader();
         authHeader.put("oauth_callback", "http://127.0.0.1:8080/process_callback");
         authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
 
@@ -83,7 +78,7 @@ public class Twitter {
         return false;
     }
 
-    private Map getDefaultAuthHeader() {
+    private Map getDefaultOAuthHeader() {
         Map authHeader = new HashMap();
         long timeMillis = System.currentTimeMillis();
         long timeSecs = timeMillis / 1000;
@@ -113,31 +108,6 @@ public class Twitter {
         return response;
     }
 
-    private static Map sortByKey(Map map) {
-        return new TreeMap(map);
-    }
-
-    private static Map sortByValue(Map map) {
-        List list = new LinkedList(map.entrySet());
-
-        Collections.sort(list, new Comparator() {
-            public int compare(Object o1, Object o2) {
-                Comparable comparable1 = (Comparable) ((Map.Entry) o1).getValue();
-                Comparable comparable2 = (Comparable) ((Map.Entry) o2).getValue();
-
-                return comparable1.compareTo(comparable2);
-            }
-        });
-
-        Map sortedMap = new LinkedHashMap();
-        for (Iterator iterator = list.iterator(); iterator.hasNext();) {
-            Map.Entry entry = (Map.Entry) iterator.next();
-            sortedMap.put(entry.getKey(), entry.getValue());
-        }
-
-        return sortedMap;
-    }
-
     private String getHeader(Map parameters) {
         StringBuffer buffer = new StringBuffer();
         Iterator iterator = parameters.entrySet().iterator();
@@ -147,9 +117,9 @@ public class Twitter {
             String key = (String) entry.getKey();
             String value = (String) entry.getValue();
 
-            buffer.append(percentEncode(key));
+            buffer.append(Util.percentEncode(key));
             buffer.append("=\"");
-            buffer.append(percentEncode(value));
+            buffer.append(Util.percentEncode(value));
             buffer.append("\"");
 
             if (iterator.hasNext()) {
@@ -169,9 +139,9 @@ public class Twitter {
             String key = (String) entry.getKey();
             String value = (String) entry.getValue();
 
-            buffer.append(percentEncode(key));
+            buffer.append(Util.percentEncode(key));
             buffer.append("=");
-            buffer.append(percentEncode(value));
+            buffer.append(Util.percentEncode(value));
 
             if (iterator.hasNext()) {
                 buffer.append("&");
@@ -183,78 +153,36 @@ public class Twitter {
 
     private String getSignature(String method, String baseURL, Map parameters) {
         // sort parameters by values and keys so they are in the correct order for signing
-        parameters = sortByValue(parameters);
-        parameters = sortByKey(parameters);
+        parameters = Util.sortByValue(parameters);
+        parameters = Util.sortByKey(parameters);
 
         String encodedParameterString = getEncodedParameterString(parameters);
         String baseAuthSignature = getBaseAuthSignature(method, baseURL, encodedParameterString);
-        return hash(getSigningKey(), baseAuthSignature);
+        return Util.hmacSha1(getSigningKey(), baseAuthSignature);
     }
 
     private String getBaseAuthSignature(String method, String baseURL, String paramString) {
         StringBuffer buffer = new StringBuffer();
         buffer.append(method.toUpperCase());
         buffer.append("&");
-        buffer.append(percentEncode(baseURL));
+        buffer.append(Util.percentEncode(baseURL));
         buffer.append("&");
-        buffer.append(percentEncode(paramString));
+        buffer.append(Util.percentEncode(paramString));
         return buffer.toString();
     }
 
     private String getSigningKey() {
         StringBuffer buffer = new StringBuffer();
-        buffer.append(percentEncode(oauthConfig.getSecret()));
+        buffer.append(Util.percentEncode(oauthConfig.getSecret()));
         buffer.append("&");
 
         if (requestToken != null) {
-            buffer.append(percentEncode(requestToken.getSecret()));
+            buffer.append(Util.percentEncode(requestToken.getSecret()));
         }
 
         return buffer.toString();
     }
 
-    private String hash(String key, String data) {
-        try {
-            // Get an hmac_sha1 key from the raw key bytes
-            byte[] keyBytes = key.getBytes();
-            SecretKeySpec signingKey = new SecretKeySpec(keyBytes, HMAC_SHA1);
-
-            // Get an hmac_sha1 Mac instance and initialize with the signing key
-            Mac mac = Mac.getInstance(HMAC_SHA1);
-            mac.init(signingKey);
-
-            // Compute the hmac on input data bytes
-            byte[] rawHmac = mac.doFinal(data.getBytes());
-
-            // Convert raw bytes to base64
-            byte[] base64 = Base64.encodeBase64(rawHmac);
-            //byte[] hexBytes = new Hex().encode(rawHmac);
-
-            //  Covert array of Hex bytes to a String
-            return new String(base64, "UTF-8").trim();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public static String percentEncode(String s) {
-        if (s == null) {
-            return "";
-        }
-
-        try {
-            return URLEncoder.encode(s, "UTF-8")
-                    // OAuth encodes some characters differently:
-                    .replaceAll("\\+", "%20")
-                    .replaceAll("\\*", "%2A")
-                    .replaceAll("%7E", "~");
-            // This could be done faster with more hand-crafted code.
-        } catch (UnsupportedEncodingException wow) {
-            throw new RuntimeException(wow.getMessage(), wow);
-        }
-    }
-
-    // Writes a request to a connection
     private static boolean writeRequest(HttpsURLConnection connection, String textBody) {
         try {
             BufferedWriter wr = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream()));
@@ -270,7 +198,6 @@ public class Twitter {
         }
     }
 
-    // Reads a response for a given connection and returns it as a string.
     private static String readResponse(HttpsURLConnection connection) {
         try {
             StringBuffer str = new StringBuffer();
@@ -293,7 +220,7 @@ public class Twitter {
         }
         catch (IOException e) {
             e.printStackTrace();
-            return new String();
+            return "";
         }
     }
 }
