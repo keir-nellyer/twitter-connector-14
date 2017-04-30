@@ -1,9 +1,8 @@
 package uk.co.kyocera.twitter.connector;
 
 import org.apache.commons.codec.binary.Base64;
-import org.json.simple.JSONObject;
-import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
+import uk.co.kyocera.twitter.connector.oauth.RequestToken;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -22,37 +21,17 @@ public class Twitter {
     private final String userAgent;
     private final OAuthConfig oauthConfig;
 
-    private String oauthTokenSecret = null;
+    private RequestToken requestToken = null;
 
     public Twitter(String userAgent, OAuthConfig oauthConfig) {
         this.userAgent = userAgent;
         this.oauthConfig = oauthConfig;
     }
 
-    public void fetchRequestToken() {
-        long timeMillis = System.currentTimeMillis();
-        long timeSecs = timeMillis / 1000;
-
-        Map authHeader = new HashMap();
-        authHeader.put("oauth_nonce", String.valueOf(timeMillis)); // use time millis for ease
+    public boolean fetchRequestToken() {
+        Map authHeader = getDefaultAuthHeader();
         authHeader.put("oauth_callback", "http://127.0.0.1:8080/process_callback");
-        authHeader.put("oauth_signature_method", "HMAC-SHA1");
-        authHeader.put("oauth_timestamp", String.valueOf(timeSecs));
-        authHeader.put("oauth_consumer_key", oauthConfig.getKey());
-        authHeader.put("oauth_version", "1.0");
-
-        authHeader = sortByValue(authHeader);
-        authHeader = sortByKey(authHeader);
-
-        String parameterString = getParameterString(authHeader);
-        System.out.println("Parm str: " + parameterString);
-        String baseSignature = getBaseAuthSignature("POST", REQUEST_TOKEN_URL, parameterString);
-        System.out.println("Base Signature: " + baseSignature);
-        String signingKey = getSigningKey();
-        System.out.println("Signing Key: " + signingKey);
-        String hashed = hash(signingKey, baseSignature);
-        System.out.println("Hash: " + hashed);
-        authHeader.put("oauth_signature", hashed);
+        authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
 
         HttpsURLConnection connection = null;
 
@@ -64,28 +43,17 @@ public class Twitter {
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Host", "api.twitter.com");
             connection.setRequestProperty("User-Agent", userAgent);
-            String header = getHeader(authHeader);
-            System.out.println("Header: " + header);
-            connection.setRequestProperty("Authorization", "OAuth " + header);
+            connection.setRequestProperty("Authorization", "OAuth " + getHeader(authHeader));
             connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
             connection.setUseCaches(false);
 
             writeRequest(connection, "");
 
-            // Parse the JSON response into a JSON mapped object to fetch fields from.
-            String response = readResponse(connection);
-            System.out.println("Response: " + response);
-            JSONObject obj = (JSONObject)JSONValue.parse(response);
-
-            if (obj != null) {
-                String token = (String)obj.get("oauth_token");
-                String secret = (String) obj.get("oauth_token_secret");
-
-                System.out.println(token);
-                System.out.println(secret);
-            } else {
-
-            }
+            Map response = parseEncodedResponse(readResponse(connection));
+            String token = (String) response.get("oauth_token");
+            String secret = (String) response.get("oauth_token_secret");
+            requestToken = new RequestToken(token, secret);
+            return true;
         } catch (MalformedURLException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -95,6 +63,38 @@ public class Twitter {
                 connection.disconnect();
             }
         }
+
+        return false;
+    }
+
+    private Map getDefaultAuthHeader() {
+        Map authHeader = new HashMap();
+        long timeMillis = System.currentTimeMillis();
+        long timeSecs = timeMillis / 1000;
+        authHeader.put("oauth_nonce", String.valueOf(timeMillis)); // use time millis for ease
+        authHeader.put("oauth_signature_method", "HMAC-SHA1");
+        authHeader.put("oauth_timestamp", String.valueOf(timeSecs));
+        authHeader.put("oauth_consumer_key", oauthConfig.getKey());
+        authHeader.put("oauth_version", "1.0");
+        return authHeader;
+    }
+
+    private Map parseEncodedResponse(String responseBody) {
+        Map response = new HashMap();
+        StringTokenizer tokenizer = new StringTokenizer(responseBody, "&");
+
+        while (tokenizer.hasMoreTokens()) {
+            String currentToken = tokenizer.nextToken();
+            int separatorIndex = currentToken.indexOf('=');
+
+            if (separatorIndex != -1) {
+                String key = currentToken.substring(0, separatorIndex);
+                String value = currentToken.substring(separatorIndex + 1);
+                response.put(key, value);
+            }
+        }
+
+        return response;
     }
 
     private static Map sortByKey(Map map) {
@@ -144,7 +144,7 @@ public class Twitter {
         return buffer.toString();
     }
 
-    private String getParameterString(Map parameters) {
+    private String getEncodedParameterString(Map parameters) {
         StringBuffer buffer = new StringBuffer();
         Iterator iterator = parameters.entrySet().iterator();
 
@@ -165,6 +165,16 @@ public class Twitter {
         return buffer.toString();
     }
 
+    private String getSignature(String method, String baseURL, Map parameters) {
+        // sort parameters by values and keys so they are in the correct order for signing
+        parameters = sortByValue(parameters);
+        parameters = sortByKey(parameters);
+
+        String encodedParameterString = getEncodedParameterString(parameters);
+        String baseAuthSignature = getBaseAuthSignature(method, baseURL, encodedParameterString);
+        return hash(getSigningKey(), baseAuthSignature);
+    }
+
     private String getBaseAuthSignature(String method, String baseURL, String paramString) {
         StringBuffer buffer = new StringBuffer();
         buffer.append(method.toUpperCase());
@@ -180,8 +190,8 @@ public class Twitter {
         buffer.append(percentEncode(oauthConfig.getSecret()));
         buffer.append("&");
 
-        if (oauthTokenSecret != null) {
-            buffer.append(percentEncode(oauthTokenSecret));
+        if (requestToken != null) {
+            buffer.append(percentEncode(requestToken.getSecret()));
         }
 
         return buffer.toString();
@@ -215,6 +225,7 @@ public class Twitter {
         if (s == null) {
             return "";
         }
+
         try {
             return URLEncoder.encode(s, "UTF-8")
                     // OAuth encodes some characters differently:
