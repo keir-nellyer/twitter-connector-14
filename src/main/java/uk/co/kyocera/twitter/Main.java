@@ -16,7 +16,7 @@ public class Main {
         Twitter twitter = new Twitter("Kyocera SocialLink", oauthConfig);
 
         if (twitter.fetchRequestToken()) {
-            URL authenticateURL = twitter.getAuthenticateURL();
+            URL authenticateURL = twitter.getAuthenticateURL("scan_to_social");
             System.out.println("Authenticate URL: " + authenticateURL.toString());
 
             System.out.println("Paste oauth_verifier string");
