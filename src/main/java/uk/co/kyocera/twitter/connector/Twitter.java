@@ -1,6 +1,10 @@
 package uk.co.kyocera.twitter.connector;
 
 import org.apache.commons.codec.binary.Base64;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.JSONValue;
+import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 import uk.co.kyocera.twitter.connector.oauth.RequestToken;
 
@@ -28,7 +32,7 @@ public class Twitter {
         this.oauthConfig = oauthConfig;
     }
 
-    public boolean fetchRequestToken() {
+    public boolean fetchRequestToken() throws TwitterException {
         Map authHeader = getDefaultAuthHeader();
         authHeader.put("oauth_callback", "http://127.0.0.1:8080/process_callback");
         authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
@@ -48,12 +52,24 @@ public class Twitter {
             connection.setUseCaches(false);
 
             writeRequest(connection, "");
+            String responseBody = readResponse(connection);
 
-            Map response = parseEncodedResponse(readResponse(connection));
-            String token = (String) response.get("oauth_token");
-            String secret = (String) response.get("oauth_token_secret");
-            requestToken = new RequestToken(token, secret);
-            return true;
+            if (connection.getResponseCode() >= 400) {
+                JSONObject jsonObject = (JSONObject) JSONValue.parse(responseBody);
+
+                if (jsonObject.containsKey("errors")) {
+                    JSONArray errors = (JSONArray) jsonObject.get("errors");
+                    throw new TwitterException(errors.toString());
+                } else {
+                    throw new TwitterException("Twitter API returned response code: " + connection.getResponseCode());
+                }
+            } else {
+                Map response = parseEncodedResponse(responseBody);
+                String token = (String) response.get("oauth_token");
+                String secret = (String) response.get("oauth_token_secret");
+                requestToken = new RequestToken(token, secret);
+                return true;
+            }
         } catch (MalformedURLException e) {
             e.printStackTrace();
         } catch (IOException e) {
@@ -267,10 +283,12 @@ public class Twitter {
             }
 
             BufferedReader br = new BufferedReader(new InputStreamReader(inputStream));
-            String line = "";
+            String line;
+
             while((line = br.readLine()) != null) {
-                str.append(line + System.getProperty("line.separator"));
+                str.append(line).append(System.getProperty("line.separator"));
             }
+
             return str.toString();
         }
         catch (IOException e) {

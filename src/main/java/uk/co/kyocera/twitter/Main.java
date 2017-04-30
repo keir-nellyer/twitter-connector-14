@@ -1,6 +1,7 @@
 package uk.co.kyocera.twitter;
 
 import uk.co.kyocera.twitter.connector.Twitter;
+import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 
 import java.io.IOException;
@@ -12,6 +13,10 @@ public class Main {
     public static void main(String[] args) throws IOException {
         Twitter twitter = new Twitter("Kyocera SocialLink", new OAuthConfig(CONSUMER_KEY, CONSUMER_SECRET));
 
-        twitter.fetchRequestToken();
+        try {
+            twitter.fetchRequestToken();
+        } catch (TwitterException e) {
+            e.printStackTrace();
+        }
     }
 }
