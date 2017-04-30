@@ -166,16 +166,7 @@ public class Twitter {
         parameters.add(new NameValuePair("status", message));
 
         if (mediaIds.length > 0) {
-            StringBuffer mediaIdsBuffer = new StringBuffer();
-            for (int i = 0; i < mediaIds.length; i++) {
-                mediaIdsBuffer.append(mediaIds[0]);
-
-                if (i != mediaIds.length - 1) {
-                    mediaIdsBuffer.append(",");
-                }
-            }
-
-            parameters.add(new NameValuePair("media_ids", mediaIdsBuffer.toString()));
+            parameters.add(new NameValuePair("media_ids", joinIds(mediaIds)));
         }
 
         Map authHeader = getOAuthHeader();
@@ -219,6 +210,20 @@ public class Twitter {
         }
 
         return -1;
+    }
+
+    private String joinIds(long[] mediaIds) {
+        StringBuffer mediaIdsBuffer = new StringBuffer();
+
+        for (int i = 0; i < mediaIds.length; i++) {
+            mediaIdsBuffer.append(mediaIds[0]);
+
+            if (i != mediaIds.length - 1) {
+                mediaIdsBuffer.append(",");
+            }
+        }
+
+        return mediaIdsBuffer.toString();
     }
 
     public URL getAuthenticateURL(String screenName) {
