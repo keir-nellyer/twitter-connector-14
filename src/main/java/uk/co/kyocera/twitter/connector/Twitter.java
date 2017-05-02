@@ -43,13 +43,13 @@ public class Twitter {
         this.oauthConfig = oauthConfig;
     }
 
-    public boolean fetchRequestToken() throws TwitterException, TokenException {
+    public boolean fetchRequestToken(String callbackURL) throws TwitterException, TokenException {
         if (token != null) {
             throw new TokenException("Token already present.");
         }
 
         OAuthHeader authHeader = new OAuthHeader(oauthConfig);
-        authHeader.addOAuthParameter("callback", oauthConfig.getCallbackURL());
+        authHeader.addOAuthParameter("callback", callbackURL);
 
         try {
             authHeader.sign("POST", REQUEST_TOKEN_URL);

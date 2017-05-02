@@ -13,12 +13,13 @@ import java.security.NoSuchAlgorithmException;
 public class Main {
     private static final String CONSUMER_KEY = "R3zGaVVKuW6uQZy6YxaT9bzRM";
     private static final String CONSUMER_SECRET = "jVXVR2gmG3Eycrbj6t1Sbcq2jEbOkdDh1NzbXTfKIsDu0KIDYd";
+    public static final String AUTHORIZE_CALLBACK_URL = "http://127.0.0.1:8080/process_callback";
 
     public static void main(String[] args) throws IOException, TwitterException, TokenException, InvalidKeyException, NoSuchAlgorithmException { // TODO do proper error handling
-        OAuthConfig oauthConfig = new OAuthConfig(CONSUMER_KEY, CONSUMER_SECRET, "http://127.0.0.1:8080/process_callback");
+        OAuthConfig oauthConfig = new OAuthConfig(CONSUMER_KEY, CONSUMER_SECRET);
         Twitter twitter = new Twitter("Kyocera SocialLink", oauthConfig);
 
-        if (twitter.fetchRequestToken()) {
+        if (twitter.fetchRequestToken(AUTHORIZE_CALLBACK_URL)) {
             URL authenticateURL = twitter.getAuthenticateURL("scan_to_social");
             System.out.println("Authenticate URL: " + authenticateURL.toString());
 
