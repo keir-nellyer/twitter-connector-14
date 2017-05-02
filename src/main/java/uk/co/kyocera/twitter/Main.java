@@ -1,17 +1,20 @@
 package uk.co.kyocera.twitter;
 
 import uk.co.kyocera.twitter.connector.Twitter;
+import uk.co.kyocera.twitter.connector.exception.TokenException;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 
 import java.io.*;
 import java.net.URL;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 
 public class Main {
     private static final String CONSUMER_KEY = "R3zGaVVKuW6uQZy6YxaT9bzRM";
     private static final String CONSUMER_SECRET = "jVXVR2gmG3Eycrbj6t1Sbcq2jEbOkdDh1NzbXTfKIsDu0KIDYd";
 
-    public static void main(String[] args) throws IOException, TwitterException { // TODO do proper error handling
+    public static void main(String[] args) throws IOException, TwitterException, TokenException, InvalidKeyException, NoSuchAlgorithmException { // TODO do proper error handling
         OAuthConfig oauthConfig = new OAuthConfig(CONSUMER_KEY, CONSUMER_SECRET, "http://127.0.0.1:8080/process_callback");
         Twitter twitter = new Twitter("Kyocera SocialLink", oauthConfig);
 
@@ -23,10 +26,10 @@ public class Main {
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
             if (twitter.fetchAccessToken(reader.readLine())) {
-                long mediaId = twitter.uploadMedia(new File("src/main/resources/image.jpg"));
+                long mediaId = twitter.uploadMedia(new File("src/main/resources/java-logo.jpg"));
 
                 if (mediaId != -1) {
-                    long statusId = twitter.updateStatus("Test Status from Twitter Connector", new long[]{mediaId});
+                    long statusId = twitter.updateStatus("Improved OAuth header handling test", new long[]{mediaId});
 
                     if (statusId != -1) {
                         System.out.println("Status updated, id = " + statusId);

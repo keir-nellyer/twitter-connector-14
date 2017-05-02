@@ -34,30 +34,6 @@ public class Util {
         return sortedMap;
     }
 
-    public static String hmacSha1(String key, String data) {
-        try {
-            // Get an hmac_sha1 key from the raw key bytes
-            byte[] keyBytes = key.getBytes();
-            SecretKeySpec signingKey = new SecretKeySpec(keyBytes, HMAC_SHA1);
-
-            // Get an hmac_sha1 Mac instance and initialize with the signing key
-            Mac mac = Mac.getInstance(HMAC_SHA1);
-            mac.init(signingKey);
-
-            // Compute the hmac on input data bytes
-            byte[] rawHmac = mac.doFinal(data.getBytes());
-
-            // Convert raw bytes to base64
-            byte[] base64 = org.apache.commons.codec.binary.Base64.encodeBase64(rawHmac);
-            //byte[] hexBytes = new Hex().encode(rawHmac);
-
-            //  Covert array of Hex bytes to a String
-            return new String(base64, "UTF-8").trim();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     public static String percentEncode(String s) {
         if (s == null) {
             return "";

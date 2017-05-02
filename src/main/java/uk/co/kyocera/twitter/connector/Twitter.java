@@ -10,16 +10,16 @@ import org.apache.commons.httpclient.methods.multipart.Part;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import uk.co.kyocera.twitter.connector.exception.TokenException;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
-import uk.co.kyocera.twitter.connector.oauth.AccessToken;
-import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
-import uk.co.kyocera.twitter.connector.oauth.RequestToken;
-import uk.co.kyocera.twitter.connector.util.Util;
+import uk.co.kyocera.twitter.connector.oauth.*;
 
 import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class Twitter {
@@ -33,24 +33,34 @@ public class Twitter {
     private final OAuthConfig oauthConfig;
 
     private final HttpClient httpClient = new HttpClient();
-    private RequestToken requestToken = null;
-    private AccessToken accessToken = null;
+    private Token token = null;
 
     public Twitter(String userAgent, OAuthConfig oauthConfig) {
         this.userAgent = userAgent;
         this.oauthConfig = oauthConfig;
     }
 
-    public boolean fetchRequestToken() throws TwitterException {
-        Map authHeader = getOAuthHeader();
-        authHeader.put("oauth_callback", oauthConfig.getCallbackURL());
-        authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
+    public boolean fetchRequestToken() throws TwitterException, TokenException {
+        if (token != null) {
+            throw new TokenException("Token already present.");
+        }
+
+        OAuthHeader authHeader = new OAuthHeader(oauthConfig);
+        authHeader.addOAuthParameter("callback", oauthConfig.getCallbackURL());
+
+        try {
+            authHeader.sign("POST", REQUEST_TOKEN_URL);
+        } catch (Exception e) {
+            // TODO logging
+            e.printStackTrace();
+            return false;
+        }
 
         try {
             PostMethod requestTokenMethod = new PostMethod(REQUEST_TOKEN_URL);
             requestTokenMethod.setRequestHeader("Host", "api.twitter.com");
             requestTokenMethod.setRequestHeader("User-Agent", userAgent);
-            requestTokenMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+            requestTokenMethod.setRequestHeader("Authorization", authHeader.toHeaderString());
 
             int responseCode = httpClient.executeMethod(requestTokenMethod);
             String responseBody = requestTokenMethod.getResponseBodyAsString();
@@ -68,7 +78,7 @@ public class Twitter {
                 Map response = parseEncodedResponse(responseBody);
                 String token = (String) response.get("oauth_token");
                 String secret = (String) response.get("oauth_token_secret");
-                this.requestToken = new RequestToken(token, secret);
+                this.token = new RequestToken(token, secret);
                 return true;
             }
         } catch (MalformedURLException e) {
@@ -80,16 +90,27 @@ public class Twitter {
         return false;
     }
 
-    public boolean fetchAccessToken(String oauthVerifier) throws TwitterException {
-        Map authHeader = getOAuthHeader();
-        authHeader.put("oauth_verifier", oauthVerifier);
-        authHeader.put("oauth_signature", getSignature("POST", REQUEST_TOKEN_URL, authHeader));
+    public boolean fetchAccessToken(String oauthVerifier) throws TwitterException, TokenException {
+        if (token != null && token instanceof AccessToken) {
+            throw new TokenException("Already have access token.");
+        } else if (token == null || !(token instanceof RequestToken)) {
+            throw new TokenException("Request token not present.");
+        }
+
+        OAuthHeader authHeader = new OAuthHeader(oauthConfig, token);
+        authHeader.addOAuthParameter("verifier", oauthVerifier);
+        try {
+            authHeader.sign("POST", ACCESS_TOKEN_URL);
+        } catch (Exception e) {
+            // TODO logging
+            e.printStackTrace();
+        }
 
         try {
             PostMethod accessTokenMethod = new PostMethod(ACCESS_TOKEN_URL);
             accessTokenMethod.setRequestHeader("Host", "api.twitter.com");
             accessTokenMethod.setRequestHeader("User-Agent", userAgent);
-            accessTokenMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+            accessTokenMethod.setRequestHeader("Authorization", authHeader.toHeaderString());
 
             int responseCode = httpClient.executeMethod(accessTokenMethod);
             String responseBody = accessTokenMethod.getResponseBodyAsString();
@@ -109,7 +130,7 @@ public class Twitter {
                 String secret = (String) response.get("oauth_token_secret");
                 long userId = Long.parseLong((String) response.get("user_id"));
                 String screenName = (String) response.get("screen_name");
-                this.accessToken = new AccessToken(token, secret, userId, screenName);
+                this.token = new AccessToken(token, secret, userId, screenName);
                 return true;
             }
         } catch (MalformedURLException e) {
@@ -121,15 +142,25 @@ public class Twitter {
         return false;
     }
 
-    public long uploadMedia(File file) throws TwitterException {
-        Map authHeader = getOAuthHeader();
-        authHeader.put("oauth_signature", getSignature("POST", MEDIA_UPLOAD_URL, authHeader));
+    public long uploadMedia(File file) throws TwitterException, TokenException {
+        if (token == null || !(token instanceof AccessToken)) {
+            throw new TokenException("Access token not present.");
+        }
+
+        OAuthHeader authHeader = new OAuthHeader(oauthConfig, token);
+
+        try {
+            authHeader.sign("POST", MEDIA_UPLOAD_URL);
+        } catch (Exception e) {
+            // TODO logging
+            e.printStackTrace();
+        }
 
         try {
             PostMethod mediaUploadMethod = new PostMethod(MEDIA_UPLOAD_URL);
             mediaUploadMethod.setRequestHeader("Host", "api.twitter.com");
             mediaUploadMethod.setRequestHeader("User-Agent", userAgent);
-            mediaUploadMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+            mediaUploadMethod.setRequestHeader("Authorization", authHeader.toHeaderString());
 
             Part[] parts = {
                     new FilePart("media", file, "image/jpeg", null)
@@ -161,31 +192,34 @@ public class Twitter {
         return 0;
     }
 
-    public long updateStatus(String message, long[] mediaIds) throws TwitterException {
+    public long updateStatus(String message, long[] mediaIds) throws TwitterException, TokenException, NoSuchAlgorithmException, InvalidKeyException, UnsupportedEncodingException {
+        if (token == null || !(token instanceof AccessToken)) {
+            throw new TokenException("Access token not present.");
+        }
+
         List parameters = new ArrayList();
         parameters.add(new NameValuePair("status", message));
 
         if (mediaIds.length > 0) {
             parameters.add(new NameValuePair("media_ids", joinIds(mediaIds)));
+
         }
 
-        Map authHeader = getOAuthHeader();
-        Map allParameters = new HashMap();
-        allParameters.putAll(authHeader);
+        OAuthHeader authHeader = new OAuthHeader(oauthConfig, token);
 
         Iterator iterator = parameters.iterator();
         while (iterator.hasNext()) {
             NameValuePair pair = (NameValuePair) iterator.next();
-            allParameters.put(pair.getName(), pair.getValue());
+            authHeader.addParameter(pair.getName(), pair.getValue());
         }
 
-        authHeader.put("oauth_signature", getSignature("POST", UPDATE_STATUS_URL, allParameters));
+        authHeader.sign("POST", UPDATE_STATUS_URL);
 
         try {
             PostMethod updateStatusMethod = new PostMethod(UPDATE_STATUS_URL);
             updateStatusMethod.setRequestHeader("Host", "api.twitter.com");
             updateStatusMethod.setRequestHeader("User-Agent", userAgent);
-            updateStatusMethod.setRequestHeader("Authorization", "OAuth " + getHeader(authHeader));
+            updateStatusMethod.setRequestHeader("Authorization", authHeader.toHeaderString());
             updateStatusMethod.addParameters((NameValuePair[]) parameters.toArray(new NameValuePair[parameters.size()]));
 
             int responseCode = httpClient.executeMethod(updateStatusMethod);
@@ -226,14 +260,18 @@ public class Twitter {
         return mediaIdsBuffer.toString();
     }
 
-    public URL getAuthenticateURL(String screenName) {
-        Map parameters = new HashMap();
-
-        if (screenName != null) {
-            parameters.put("screen_name", screenName);
+    public URL getAuthenticateURL(String suggestedScreenName) throws TokenException {
+        if (token == null || !(token instanceof RequestToken)) {
+            throw new TokenException("Request token not present.");
         }
 
-        parameters.put("oauth_token", requestToken.getToken());
+        Map parameters = new HashMap();
+
+        if (suggestedScreenName != null) {
+            parameters.put("screen_name", suggestedScreenName);
+        }
+
+        parameters.put("oauth_token", token.getToken());
 
         try {
             return getURI(AUTHORIZE_URL, parameters).toURL();
@@ -270,25 +308,6 @@ public class Twitter {
         return URI.create(baseURL + paramString);
     }
 
-    private Map getOAuthHeader() {
-        Map authHeader = new HashMap();
-        long timeMillis = System.currentTimeMillis();
-        long timeSecs = timeMillis / 1000;
-        authHeader.put("oauth_nonce", String.valueOf(timeMillis)); // use time millis for ease
-        authHeader.put("oauth_signature_method", "HMAC-SHA1");
-        authHeader.put("oauth_timestamp", String.valueOf(timeSecs));
-        authHeader.put("oauth_consumer_key", oauthConfig.getKey());
-
-        if (accessToken != null) {
-            authHeader.put("oauth_token", accessToken.getToken());
-        } else if (requestToken != null) {
-            authHeader.put("oauth_token", requestToken.getToken());
-        }
-
-        authHeader.put("oauth_version", "1.0");
-        return authHeader;
-    }
-
     private Map parseEncodedResponse(String responseBody) {
         Map response = new HashMap();
         StringTokenizer tokenizer = new StringTokenizer(responseBody, "&");
@@ -305,82 +324,5 @@ public class Twitter {
         }
 
         return response;
-    }
-
-    private String getHeader(Map parameters) {
-        StringBuffer buffer = new StringBuffer();
-        Iterator iterator = parameters.entrySet().iterator();
-
-        while (iterator.hasNext()) {
-            Map.Entry entry = (Map.Entry) iterator.next();
-            String key = (String) entry.getKey();
-            String value = (String) entry.getValue();
-
-            buffer.append(Util.percentEncode(key));
-            buffer.append("=\"");
-            buffer.append(Util.percentEncode(value));
-            buffer.append("\"");
-
-            if (iterator.hasNext()) {
-                buffer.append(", ");
-            }
-        }
-
-        return buffer.toString();
-    }
-
-    private String getEncodedParameterString(Map parameters) {
-        StringBuffer buffer = new StringBuffer();
-        Iterator iterator = parameters.entrySet().iterator();
-
-        while (iterator.hasNext()) {
-            Map.Entry entry = (Map.Entry) iterator.next();
-            String key = (String) entry.getKey();
-            String value = (String) entry.getValue();
-
-            buffer.append(Util.percentEncode(key));
-            buffer.append("=");
-            buffer.append(Util.percentEncode(value));
-
-            if (iterator.hasNext()) {
-                buffer.append("&");
-            }
-        }
-
-        return buffer.toString();
-    }
-
-    private String getSignature(String method, String baseURL, Map parameters) {
-        // sort parameters by values and keys so they are in the correct order for signing
-        parameters = Util.sortByValue(parameters);
-        parameters = Util.sortByKey(parameters);
-
-        String encodedParameterString = getEncodedParameterString(parameters);
-        String baseAuthSignature = getBaseAuthSignature(method, baseURL, encodedParameterString);
-        return Util.hmacSha1(getSigningKey(), baseAuthSignature);
-    }
-
-    private String getBaseAuthSignature(String method, String baseURL, String paramString) {
-        StringBuffer buffer = new StringBuffer();
-        buffer.append(method.toUpperCase());
-        buffer.append("&");
-        buffer.append(Util.percentEncode(baseURL));
-        buffer.append("&");
-        buffer.append(Util.percentEncode(paramString));
-        return buffer.toString();
-    }
-
-    private String getSigningKey() {
-        StringBuffer buffer = new StringBuffer();
-        buffer.append(Util.percentEncode(oauthConfig.getSecret()));
-        buffer.append("&");
-
-        if (accessToken != null) {
-            buffer.append(Util.percentEncode(accessToken.getSecret()));
-        } else if (requestToken != null) {
-            buffer.append(Util.percentEncode(requestToken.getSecret()));
-        }
-
-        return buffer.toString();
     }
 }
