@@ -13,6 +13,9 @@ import org.json.simple.JSONValue;
 import uk.co.kyocera.twitter.connector.exception.TokenException;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
 import uk.co.kyocera.twitter.connector.oauth.*;
+import uk.co.kyocera.twitter.connector.oauth.token.AccessToken;
+import uk.co.kyocera.twitter.connector.oauth.token.RequestToken;
+import uk.co.kyocera.twitter.connector.oauth.token.Token;
 
 import java.io.*;
 import java.net.MalformedURLException;

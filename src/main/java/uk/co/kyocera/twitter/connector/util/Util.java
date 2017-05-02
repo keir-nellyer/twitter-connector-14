@@ -1,14 +1,8 @@
 package uk.co.kyocera.twitter.connector.util;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.io.*;
-import java.net.URLEncoder;
 import java.util.*;
 
 public class Util {
-    private static final String HMAC_SHA1 = "HmacSHA1";
-
     public static Map sortByKey(Map map) {
         return new TreeMap(map);
     }
@@ -32,22 +26,5 @@ public class Util {
         }
 
         return sortedMap;
-    }
-
-    public static String percentEncode(String s) {
-        if (s == null) {
-            return "";
-        }
-
-        try {
-            return URLEncoder.encode(s, "UTF-8")
-                    // OAuth encodes some characters differently:
-                    .replaceAll("\\+", "%20")
-                    .replaceAll("\\*", "%2A")
-                    .replaceAll("%7E", "~");
-            // This could be done faster with more hand-crafted code.
-        } catch (UnsupportedEncodingException wow) {
-            throw new RuntimeException(wow.getMessage(), wow);
-        }
     }
 }

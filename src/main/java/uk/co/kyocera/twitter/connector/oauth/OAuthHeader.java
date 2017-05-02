@@ -1,11 +1,13 @@
 package uk.co.kyocera.twitter.connector.oauth;
 
 import org.apache.commons.codec.binary.Base64;
+import uk.co.kyocera.twitter.connector.oauth.token.Token;
 import uk.co.kyocera.twitter.connector.util.Util;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
@@ -76,18 +78,18 @@ public class OAuthHeader {
 
     private String getRawSigningKey() {
         StringBuffer buffer = new StringBuffer();
-        buffer.append(Util.percentEncode(oauthConfig.getSecret()));
+        buffer.append(percentEncode(oauthConfig.getSecret()));
         buffer.append("&");
 
         if (token != null) {
-            buffer.append(Util.percentEncode(token.getSecret()));
+            buffer.append(percentEncode(token.getSecret()));
         }
 
         return buffer.toString();
     }
 
     private String getBaseSignature(String method, String baseURL, String paramString) {
-        return method.toUpperCase() + "&" + Util.percentEncode(baseURL) + "&" + Util.percentEncode(paramString);
+        return method.toUpperCase() + "&" + percentEncode(baseURL) + "&" + percentEncode(paramString);
     }
 
     /**
@@ -145,10 +147,27 @@ public class OAuthHeader {
             String key = (String) entry.getKey();
             String value = (String) entry.getValue();
 
-            encodedParameters.put(Util.percentEncode(key), Util.percentEncode(value));
+            encodedParameters.put(percentEncode(key), percentEncode(value));
         }
 
         return encodedParameters;
+    }
+
+    private static String percentEncode(String s) {
+        if (s == null) {
+            return "";
+        }
+
+        try {
+            return URLEncoder.encode(s, "UTF-8")
+                    // OAuth encodes some characters differently:
+                    .replaceAll("\\+", "%20")
+                    .replaceAll("\\*", "%2A")
+                    .replaceAll("%7E", "~");
+            // This could be done faster with more hand-crafted code.
+        } catch (UnsupportedEncodingException wow) {
+            throw new RuntimeException(wow.getMessage(), wow);
+        }
     }
 
     /**
