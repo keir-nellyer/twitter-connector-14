@@ -48,22 +48,9 @@ public class OAuthHeader {
         parameters.put(key, value);
     }
 
-    private void timestamp() {
-        long epochSeconds = System.currentTimeMillis() / 1000;
-        addOAuthParameter("timestamp", String.valueOf(epochSeconds));
-    }
-
     public void sign(String method, String baseURL) throws InvalidKeyException, NoSuchAlgorithmException, UnsupportedEncodingException {
         checkModifiable();
-        timestamp();
-        addOAuthParameter("consumer_key", oauthConfig.getKey());
-        addOAuthParameter("nonce", generateNonce());
-        addOAuthParameter("signature_method", "HMAC-SHA1");
-        addOAuthParameter("version", OAUTH_VERSION);
-
-        if (token != null) {
-            addOAuthParameter("token", token.getToken());
-        }
+        addRequiredParameters();
 
         Map signingParameters = getEncodedParameters(parameters);
         // sort parameters by values and keys so they are in the correct order for signing
@@ -74,6 +61,23 @@ public class OAuthHeader {
         String baseSignature = getBaseSignature(method, baseURL, parameterString);
         String signature = computeSignature(getRawSigningKey(), baseSignature);
         addOAuthParameter("signature", signature);
+    }
+
+    private void addRequiredParameters() {
+        long epochSeconds = System.currentTimeMillis() / 1000;
+        addOAuthParameter("timestamp", String.valueOf(epochSeconds));
+        addOAuthParameter("consumer_key", oauthConfig.getKey());
+        addOAuthParameter("nonce", generateNonce());
+        addOAuthParameter("signature_method", "HMAC-SHA1");
+        addOAuthParameter("version", OAUTH_VERSION);
+
+        if (token != null) {
+            addOAuthParameter("token", token.getToken());
+        }
+    }
+
+    public String toHeaderString() {
+        return OAUTH_HEADER_PREFIX + getParameterString(getEncodedParameters(parameters), ", ");
     }
 
     private String getRawSigningKey() {
@@ -105,10 +109,6 @@ public class OAuthHeader {
         if (isSigned()) {
             throw new IllegalStateException("Header already signed, this operation would modify the contents.");
         }
-    }
-
-    public String toHeaderString() {
-        return OAUTH_HEADER_PREFIX + getParameterString(getEncodedParameters(parameters), ", ");
     }
 
     /**
