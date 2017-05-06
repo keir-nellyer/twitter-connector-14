@@ -44,12 +44,12 @@ public class OAuthHeader {
     }
 
     public void addParameter(String key, String value) {
-        checkModifiable();
+        assertModifiable();
         parameters.put(key, value);
     }
 
     public void sign(String method, String baseURL) throws InvalidKeyException, NoSuchAlgorithmException, UnsupportedEncodingException {
-        checkModifiable();
+        assertModifiable();
         addRequiredParameters();
 
         Map signingParameters = getEncodedParameters(parameters);
@@ -105,7 +105,7 @@ public class OAuthHeader {
         return Long.toHexString(Double.doubleToLongBits(Math.random()));
     }
 
-    private void checkModifiable() {
+    private void assertModifiable() {
         if (isSigned()) {
             throw new IllegalStateException("Header already signed, this operation would modify the contents.");
         }
