@@ -22,7 +22,6 @@
 
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
-                            <classpathLayoutType>repository</classpathLayoutType>
                         </manifest>
                     </archive>
                 </configuration>
@@ -35,6 +34,16 @@
                 <configuration>
                     <source>1.4</source>
                     <target>1.4</target>
+                </configuration>
+            </plugin>
+
+            <!-- Copies dependencies to lib folder -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <configuration>
+                    <outputDirectory>${project.build.directory}/lib</outputDirectory>
+                    <excludeTransitive>true</excludeTransitive>
                 </configuration>
             </plugin>
         </plugins>
