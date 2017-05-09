@@ -27,10 +27,10 @@ public class Main {
             BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
 
             if (twitter.fetchAccessToken(reader.readLine())) {
-                long mediaId = twitter.uploadMedia(new File("src/main/resources/java-logo.jpg"));
+                long mediaId = twitter.uploadMedia(new File("java-logo.jpg"));
 
                 if (mediaId != -1) {
-                    long statusId = twitter.updateStatus("Improved OAuth header handling test", new long[]{mediaId});
+                    long statusId = twitter.updateStatus("Test from pure Java 1.4 environment", new long[]{mediaId});
 
                     if (statusId != -1) {
                         System.out.println("Status updated, id = " + statusId);

@@ -1,15 +1,14 @@
 package uk.co.kyocera.twitter.connector.oauth;
 
-import org.apache.commons.codec.binary.Base64;
+import org.bouncycastle.crypto.digests.SHA1Digest;
+import org.bouncycastle.crypto.macs.HMac;
+import org.bouncycastle.crypto.params.KeyParameter;
+import org.bouncycastle.util.encoders.Base64;
 import uk.co.kyocera.twitter.connector.oauth.token.Token;
 import uk.co.kyocera.twitter.connector.util.Util;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -18,7 +17,6 @@ public class OAuthHeader {
     public static final String OAUTH_PARAMETER_PREFIX = "oauth_";
     private static final String OAUTH_HEADER_PREFIX = "OAuth ";
     private static final String OAUTH_VERSION = "1.0";
-    private static final String SIGNING_METHOD = "HmacSHA1";
 
     private final OAuthConfig oauthConfig;
     private final Token token;
@@ -48,7 +46,7 @@ public class OAuthHeader {
         parameters.put(key, value);
     }
 
-    public void sign(String method, String baseURL) throws InvalidKeyException, NoSuchAlgorithmException, UnsupportedEncodingException {
+    public void sign(String method, String baseURL) throws UnsupportedEncodingException {
         assertModifiable();
         addRequiredParameters();
 
@@ -116,18 +114,18 @@ public class OAuthHeader {
      * @param key the signing key
      * @param data the data
      * @return the signed data
-     * @throws NoSuchAlgorithmException
-     * @throws InvalidKeyException
      */
-    private static String computeSignature(String key, String data) throws NoSuchAlgorithmException, InvalidKeyException, UnsupportedEncodingException {
-        byte[] keyBytes = key.getBytes();
-        SecretKeySpec signingKey = new SecretKeySpec(keyBytes, SIGNING_METHOD);
+    private static String computeSignature(String key, String data) throws UnsupportedEncodingException {
+        HMac hMac = new HMac(new SHA1Digest());
+        hMac.init(new KeyParameter(key.getBytes()));
 
-        Mac mac = Mac.getInstance(SIGNING_METHOD);
-        mac.init(signingKey);
+        byte[] dataBytes = data.getBytes();
+        hMac.update(dataBytes, 0, dataBytes.length);
 
-        byte[] rawHmac = mac.doFinal(data.getBytes());
-        byte[] base64 = Base64.encodeBase64(rawHmac);
+        byte[] rawHmac = new byte[hMac.getMacSize()];
+        hMac.doFinal(rawHmac, 0);
+
+        byte[] base64 = Base64.encode(rawHmac);
 
         return new String(base64, "UTF-8").trim();
     }
