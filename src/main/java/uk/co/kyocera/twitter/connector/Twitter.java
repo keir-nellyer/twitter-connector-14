@@ -166,7 +166,7 @@ public class Twitter {
             mediaUploadMethod.setRequestHeader("Authorization", authHeader.toHeaderString());
 
             Part[] parts = {
-                    new FilePart("media", file, "image/jpeg", null)
+                    new FilePart("media", file)
             };
 
             mediaUploadMethod.setRequestEntity(new MultipartRequestEntity(parts, mediaUploadMethod.getParams()));
