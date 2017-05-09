@@ -21,8 +21,6 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class Twitter {
@@ -195,7 +193,7 @@ public class Twitter {
         return 0;
     }
 
-    public long updateStatus(String message, long[] mediaIds) throws TwitterException, TokenException, NoSuchAlgorithmException, InvalidKeyException, UnsupportedEncodingException {
+    public long updateStatus(String message, long[] mediaIds) throws TwitterException, TokenException, UnsupportedEncodingException {
         if (token == null || !(token instanceof AccessToken)) {
             throw new TokenException("Access token not present.");
         }
