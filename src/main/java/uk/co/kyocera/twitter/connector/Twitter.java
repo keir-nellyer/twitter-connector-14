@@ -21,6 +21,8 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class Twitter {
@@ -214,7 +216,15 @@ public class Twitter {
             authHeader.addParameter(pair.getName(), pair.getValue());
         }
 
-        authHeader.sign("POST", UPDATE_STATUS_URL);
+        try {
+            authHeader.sign("POST", UPDATE_STATUS_URL);
+        } catch (InvalidKeyException e) {
+            e.printStackTrace();
+            return -1;
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+            return -1;
+        }
 
         try {
             PostMethod updateStatusMethod = new PostMethod(UPDATE_STATUS_URL);

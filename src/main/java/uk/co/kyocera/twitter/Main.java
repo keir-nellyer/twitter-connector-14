@@ -1,6 +1,5 @@
 package uk.co.kyocera.twitter;
 
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import uk.co.kyocera.twitter.connector.Twitter;
 import uk.co.kyocera.twitter.connector.exception.TokenException;
 import uk.co.kyocera.twitter.connector.exception.TwitterException;
@@ -8,7 +7,6 @@ import uk.co.kyocera.twitter.connector.oauth.OAuthConfig;
 
 import java.io.*;
 import java.net.URL;
-import java.security.Security;
 
 public class Main {
     private static final String CONSUMER_KEY = "R3zGaVVKuW6uQZy6YxaT9bzRM";
@@ -16,10 +14,6 @@ public class Main {
     public static final String AUTHORIZE_CALLBACK_URL = "http://127.0.0.1:8080/process_callback";
 
     public static void main(String[] args) throws IOException, TwitterException, TokenException { // TODO do proper error handling
-        // Java 1.4 cannot seem to handle a seemingly simple SSL connection to Twitter
-        // By utilising the BouncyCastle library, we can add it as a SecurityProvider and it'll handle this for us
-        Security.addProvider(new BouncyCastleProvider());
-
         OAuthConfig oauthConfig = new OAuthConfig(CONSUMER_KEY, CONSUMER_SECRET);
         Twitter twitter = new Twitter("Kyocera SocialLink", oauthConfig);
 

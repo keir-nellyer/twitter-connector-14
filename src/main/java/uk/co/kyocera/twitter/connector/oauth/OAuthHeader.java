@@ -1,14 +1,15 @@
 package uk.co.kyocera.twitter.connector.oauth;
 
-import org.bouncycastle.crypto.digests.SHA1Digest;
-import org.bouncycastle.crypto.macs.HMac;
-import org.bouncycastle.crypto.params.KeyParameter;
-import org.bouncycastle.util.encoders.Base64;
+import org.apache.commons.codec.binary.Base64;
 import uk.co.kyocera.twitter.connector.oauth.token.Token;
 import uk.co.kyocera.twitter.connector.util.Util;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -46,7 +47,7 @@ public class OAuthHeader {
         parameters.put(key, value);
     }
 
-    public void sign(String method, String baseURL) throws UnsupportedEncodingException {
+    public void sign(String method, String baseURL) throws UnsupportedEncodingException, InvalidKeyException, NoSuchAlgorithmException {
         assertModifiable();
         addRequiredParameters();
 
@@ -114,18 +115,18 @@ public class OAuthHeader {
      * @param key the signing key
      * @param data the data
      * @return the signed data
+     * @throws NoSuchAlgorithmException
+     * @throws InvalidKeyException
      */
-    private static String computeSignature(String key, String data) throws UnsupportedEncodingException {
-        HMac hMac = new HMac(new SHA1Digest());
-        hMac.init(new KeyParameter(key.getBytes()));
+    private static String computeSignature(String key, String data) throws NoSuchAlgorithmException, InvalidKeyException, UnsupportedEncodingException {
+        byte[] keyBytes = key.getBytes();
+        SecretKeySpec signingKey = new SecretKeySpec(keyBytes, "HmacSha1");
 
-        byte[] dataBytes = data.getBytes();
-        hMac.update(dataBytes, 0, dataBytes.length);
+        Mac mac = Mac.getInstance("HmacSha1");
+        mac.init(signingKey);
 
-        byte[] rawHmac = new byte[hMac.getMacSize()];
-        hMac.doFinal(rawHmac, 0);
-
-        byte[] base64 = Base64.encode(rawHmac);
+        byte[] rawHmac = mac.doFinal(data.getBytes());
+        byte[] base64 = Base64.encodeBase64(rawHmac);
 
         return new String(base64, "UTF-8").trim();
     }
